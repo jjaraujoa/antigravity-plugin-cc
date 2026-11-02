@@ -64,6 +64,12 @@ installer:
 curl -fsSL https://antigravity.google/cli/install.sh | bash
 ```
 
+On native Windows (Claude Code with Git Bash), use the PowerShell installer:
+
+```powershell
+irm https://antigravity.google/cli/install.ps1 | iex
+```
+
 If `agy` is installed but not logged in, run `agy` once interactively in your
 terminal to complete OAuth — or export `ANTIGRAVITY_API_KEY`.
 
@@ -116,13 +122,12 @@ Stage or make some changes, then:
 /agy:ask --model opus "explain Go's escape analysis"
 ```
 
-Supported aliases: `flash-low`, `flash-medium`, `flash`, `pro-low`, `pro`,
-`sonnet`, `opus`, `gpt-oss`. The canonical TUI strings (e.g.
-`"Claude Opus 4.6 (Thinking)"`) are also accepted. Run `/agy:help` for the
+Supported aliases: `flash-low`, `flash-medium`, `flash`, `pro-low`, `pro-medium`, `pro`,
+`sonnet`, `opus`, `gpt-oss`. Model ids or display names from `agy models` (e.g.
+`"Claude Opus 5.5 (High)"`) are passed through to `agy --model`. Run `/agy:help` for the
 full table.
 
-If no `--model` is given, the wrapper uses whatever the TUI is currently set
-to — stored in `~/.gemini/antigravity-cli/settings.json`. Project-local
+If no `--model` is given, agy uses its own default model. Project-local
 `AGENTS.md` and `GEMINI.md` files are read directly by `agy` and unaffected
 by this plugin.
 
@@ -175,9 +180,8 @@ doesn't override or shadow any of that — drop config files where `agy`
 expects them and they'll be picked up.
 
 The `--model <alias>` flag on `/agy:ask`, `/agy:delegate`, and `/agy:research`
-swaps in your requested model for the duration of a single call (under a
-lockfile, with automatic restore on exit) and leaves the TUI's selected
-model intact for subsequent runs.
+resolves the alias and passes it to agy's own `--model` flag for that call
+only, so your default model and any open TUI are left untouched.
 
 ## FAQ
 

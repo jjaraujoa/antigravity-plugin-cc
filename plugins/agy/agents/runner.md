@@ -39,15 +39,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/agy-run.sh" ask [--model <alias>] "<prompt>"
   ```
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/agy-run.sh" ask --model opus "fix the off-by-one"
   ```
-  The wrapper resolves the alias, takes a lock on `~/.gemini/antigravity-cli/settings.json`,
-  patches the model field, invokes `agy`, then restores the original on
-  exit. Supported aliases: `flash-low`, `flash-medium`, `flash`, `pro-low`,
-  `pro`, `sonnet`, `opus`, `gpt-oss`. Canonical TUI strings (e.g.
-  `"Claude Opus 4.6 (Thinking)"`) are also accepted.
-- If no `--model` was given, leave model selection to whatever the user's
-  TUI is currently set to.
-- Do not pass any other model-selection flag to `agy` directly — `agy`
-  doesn't have one. Use the wrapper's `--model` or omit it entirely.
+  The wrapper resolves the alias and passes it to `agy --model` for that
+  call only. Supported aliases: `flash-low`, `flash-medium`, `flash`,
+  `pro-low`, `pro-medium`, `pro`, `sonnet`, `opus`, `gpt-oss`. Model ids or
+  display names from `agy models` (e.g. `"Claude Opus 5.5 (High)"`) are
+  passed through.
+- If no `--model` was given, leave model selection to agy's default.
+- Do not pass `--model` to `agy` after the prompt — use the wrapper's
+  `--model` (before the prompt) so aliases resolve, or omit it entirely.
 - If the wrapper reports that `agy` is missing or unauthenticated, return
   that error verbatim and stop. Do not try to install or log in for the
   user.

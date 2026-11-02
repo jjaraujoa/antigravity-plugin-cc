@@ -16,14 +16,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/agy-run.sh" ask [--model <alias>] "<prompt>"
 
 The wrapper:
 
-- Locates `agy` in `PATH`, `~/.local/bin`, `/opt/antigravity/bin`, or
-  `/usr/local/bin`.
+- Locates `agy` in `PATH`, `%LOCALAPPDATA%\agy\bin` (Windows),
+  `~/.local/bin`, `/opt/antigravity/bin`, or `/usr/local/bin`.
 - Verifies auth (system keyring OAuth or `ANTIGRAVITY_API_KEY`).
 - Runs `agy -p "<prompt>"` non-interactively.
 - If `--model <alias>` is supplied **before** the prompt, resolves the
-  alias and applies it for the duration of the call (atomic patch of
-  `~/.gemini/antigravity-cli/settings.json` under a lockfile, restored on
-  exit).
+  alias and passes it to `agy --model` for that call only.
 - Forwards any extra arguments **after** the prompt straight to `agy` — so
   `… ask "<prompt>" --sandbox` becomes `agy -p "<prompt>" --sandbox`.
 
@@ -39,9 +37,10 @@ Pass agy-native flags through after the prompt argument.
 ## Model aliases (consumed by the wrapper)
 
 `flash-low`, `flash-medium` (`flash-med`), `flash` (`flash-high`),
-`pro-low`, `pro` (`pro-high`), `sonnet` (`claude-sonnet`),
-`opus` (`claude-opus`), `gpt-oss` (`gpt-oss-120b`). Canonical TUI strings
-are also accepted verbatim (e.g. `"Claude Opus 4.6 (Thinking)"`).
+`pro-low`, `pro-medium`, `pro` (`pro-high`, `argon`), `sonnet` (`claude-sonnet`),
+`opus` (`claude-opus`), `gpt-oss` (`gpt-oss-120b`). Any other value (a
+model id or display name from `agy models`, e.g. `"Claude Opus 5.5 (High)"`)
+is passed through to `agy --model`.
 
 Run `bash "${CLAUDE_PLUGIN_ROOT}/scripts/agy-run.sh" help` for the
 authoritative list.
@@ -67,6 +66,6 @@ If the wrapper exits non-zero, return its stderr verbatim. Standard exit
 codes:
 
 - `127` — `agy` binary not found.
-- `1` — not authenticated, no diff found (`review` subcommand), or
-  settings.json missing/malformed (`--model` path).
-- `64` — bad CLI usage of the wrapper itself, or unknown `--model` alias.
+- `1` — not authenticated, no diff found (`review` subcommand), or agy
+  rejected the `--model` value.
+- `64` — bad CLI usage of the wrapper itself, or empty `--model`.

@@ -32,9 +32,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/agy-run.sh" ask --model <alias> "<prompt>"
 argument so characters like `"`, `$`, `;`, `\` and backticks cannot break
 out.
 
-Aliases for `<alias>`: `flash-low`, `flash-medium`, `flash`, `pro-low`,
-`pro`, `sonnet`, `opus`, `gpt-oss`. The canonical TUI strings (e.g.
-`"Claude Opus 4.6 (Thinking)"`) are also accepted. Run `/agy:help` for the
+Aliases for `<alias>`: `flash-low`, `flash-medium`, `flash`, `pro-low`, `pro-medium`,
+`pro`, `sonnet`, `opus`, `gpt-oss`. Model ids or display names from `agy models` (e.g.
+`"Claude Opus 5.5 (High)"`) are passed through to `agy --model`. Run `/agy:help` for the
 full table.
 
 Notes:
