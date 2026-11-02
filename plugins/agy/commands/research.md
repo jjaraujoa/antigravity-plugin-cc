@@ -40,12 +40,12 @@ Then invoke the `agy:runner` subagent with that prompt as
 - If the request contains `--model <alias>`, forward it to the subagent so
   it can be appended to the wrapper call as `--model <alias>` (placed
   **before** the prompt argument). If no model is given, leave the choice to
-  whatever the TUI is currently set to (a reasoning-strong model like
+  agy's default model (a reasoning-strong model like
   `pro` or `opus` works well for research).
 
-Aliases: `flash-low`, `flash-medium`, `flash`, `pro-low`, `pro`, `sonnet`,
-`opus`, `gpt-oss`. Canonical TUI strings (e.g. `"Claude Opus 4.6 (Thinking)"`)
-are also accepted. Run `/agy:help` for the full table.
+Aliases: `flash-low`, `flash-medium`, `flash`, `pro-low`, `pro-medium`, `pro`, `sonnet`,
+`opus`, `gpt-oss`. Model ids or display names from `agy models` (e.g. `"Claude Opus 5.5 (High)"`)
+are passed through to `agy --model`. Run `/agy:help` for the full table.
 
 ## Response style
 

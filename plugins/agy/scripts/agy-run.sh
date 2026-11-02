@@ -1,22 +1,39 @@
 #!/usr/bin/env bash
 # agy-run.sh — Claude Code wrapper around Google Antigravity CLI (`agy`).
 # Subcommands: check | ask | review | image | help.
-# `--model` (on ask) overrides the model for one call via locked
-# settings.json patching, restored on exit.
+# `--model` (on ask) resolves an alias and passes it to agy's own
+# `--model` flag for that call only.
 
 set -euo pipefail
 
-AGY_SETTINGS_FILE="${HOME}/.gemini/antigravity-cli/settings.json"
-AGY_SETTINGS_LOCKDIR="${HOME}/.gemini/antigravity-cli/.agy-plugin.lock"
-AGY_SETTINGS_BACKUP="${HOME}/.gemini/antigravity-cli/settings.json.agy-plugin.bak"
-AGY_SETTINGS_SENTINEL="${HOME}/.gemini/antigravity-cli/.agy-plugin.patched"
+is_windows() {
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_hint() {
+  if is_windows; then
+    echo "irm https://antigravity.google/cli/install.ps1 | iex   (in PowerShell)"
+  else
+    echo "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+  fi
+}
 
 find_agy() {
   if command -v agy >/dev/null 2>&1; then
     command -v agy
     return 0
   fi
+  # Windows installer puts agy.exe in %LOCALAPPDATA%\agy\bin and only
+  # updates the *registry* PATH, so an already-running Claude Code won't see it.
+  local win_local=""
+  if is_windows && [ -n "${LOCALAPPDATA:-}" ]; then
+    win_local="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null || printf '%s' "$LOCALAPPDATA")/agy/bin/agy.exe"
+  fi
   for candidate in \
+      ${win_local:+"$win_local"} \
       "$HOME/.local/bin/agy" \
       "/opt/antigravity/bin/agy" \
       "/usr/local/bin/agy"; do
@@ -52,7 +69,7 @@ cmd_check() {
   if ! path="$(find_agy | head -n1)"; then
     cat <<JSON
 { "installed": false, "path": "", "version": "", "auth": "unknown",
-  "error": "agy binary not found; install with: curl -fsSL https://antigravity.google/cli/install.sh | bash" }
+  "error": "agy binary not found; install with: $(j_esc "$(install_hint)")" }
 JSON
     return 0
   fi
@@ -65,7 +82,7 @@ JSON
 require_ready() {
   if ! path="$(find_agy)"; then
     echo "error: agy is not installed." >&2
-    echo "       install: curl -fsSL https://antigravity.google/cli/install.sh | bash" >&2
+    echo "       install: $(install_hint)" >&2
     exit 127
   fi
   if [ "$(auth_status)" = "missing" ]; then
@@ -81,29 +98,19 @@ print_model_table() {
   local fd="${1:-2}"
   {
     echo "Aliases (case-insensitive):"
-    echo "  flash-low                     -> Gemini 3.5 Flash (Low)"
-    echo "  flash-medium, flash-med       -> Gemini 3.5 Flash (Medium)"
-    echo "  flash, flash-high             -> Gemini 3.5 Flash (High)"
-    echo "  pro-low                       -> Gemini 3.1 Pro (Low)"
-    echo "  pro, pro-high                 -> Gemini 3.1 Pro (High)"
-    echo "  sonnet, claude-sonnet         -> Claude Sonnet 4.6 (Thinking)"
-    echo "  opus, claude-opus             -> Claude Opus 4.6 (Thinking)"
+    echo "  flash-low                     -> Gemini 3.8 Flash (Low)"
+    echo "  flash-medium, flash-med       -> Gemini 3.8 Flash (Medium)"
+    echo "  flash, flash-high             -> Gemini 3.8 Flash (High)"
+    echo "  pro-low, argon-low            -> Gemini 4 Argon (Low)"
+    echo "  pro-medium, argon-medium      -> Gemini 4 Argon (Medium)"
+    echo "  pro, pro-high, argon          -> Gemini 4 Argon (High)"
+    echo "  sonnet, claude-sonnet         -> Claude Sonnet 5.5 (High)"
+    echo "  opus, claude-opus             -> Claude Opus 5.5 (High)"
     echo "  gpt-oss, gpt-oss-120b         -> GPT-OSS 120B (Medium)"
     echo
-    echo "Canonical strings (also accepted verbatim, case-sensitive):"
-    echo "  Gemini 3.5 Flash (Low|Medium|High)"
-    echo "  Gemini 3.1 Pro (Low|High)"
-    echo "  Claude Sonnet 4.6 (Thinking)"
-    echo "  Claude Opus 4.6 (Thinking)"
-    echo "  GPT-OSS 120B (Medium)"
+    echo "Anything else is passed verbatim to \`agy --model\`, which accepts"
+    echo "model ids or display names. Run \`agy models\` for the current list."
   } >&"$fd"
-}
-
-_current_default_model() {
-  [ -f "$AGY_SETTINGS_FILE" ] || return 1
-  grep -oE '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$AGY_SETTINGS_FILE" 2>/dev/null \
-    | sed -E 's/.*"model"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/' \
-    | head -n1
 }
 
 resolve_model_alias() {
@@ -111,169 +118,23 @@ resolve_model_alias() {
   if [ -z "$input" ]; then
     echo "error: --model requires a non-empty value (e.g. --model pro)" >&2
     print_model_table 2
-    local current; current="$(_current_default_model 2>/dev/null || true)"
-    if [ -n "$current" ]; then
-      echo >&2
-      echo "Tip: omit --model to use your current default (\"$current\")." >&2
-    fi
     exit 64
   fi
-  case "$input" in
-    "Gemini 3.5 Flash (Low)"|\
-    "Gemini 3.5 Flash (Medium)"|\
-    "Gemini 3.5 Flash (High)"|\
-    "Gemini 3.1 Pro (Low)"|\
-    "Gemini 3.1 Pro (High)"|\
-    "Claude Sonnet 4.6 (Thinking)"|\
-    "Claude Opus 4.6 (Thinking)"|\
-    "GPT-OSS 120B (Medium)")
-      printf '%s' "$input"
-      return 0 ;;
-  esac
   # bash 3.2 (macOS /bin/bash) lacks ${var,,}, hence tr.
   local lc; lc="$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')"
   case "$lc" in
-    flash-low)                  printf '%s' "Gemini 3.5 Flash (Low)" ;;
-    flash-medium|flash-med)     printf '%s' "Gemini 3.5 Flash (Medium)" ;;
-    flash|flash-high)           printf '%s' "Gemini 3.5 Flash (High)" ;;
-    pro-low)                    printf '%s' "Gemini 3.1 Pro (Low)" ;;
-    pro|pro-high)               printf '%s' "Gemini 3.1 Pro (High)" ;;
-    sonnet|claude-sonnet)       printf '%s' "Claude Sonnet 4.6 (Thinking)" ;;
-    opus|claude-opus)           printf '%s' "Claude Opus 4.6 (Thinking)" ;;
-    gpt-oss|gpt-oss-120b)       printf '%s' "GPT-OSS 120B (Medium)" ;;
-    *)
-      echo "error: unknown model alias '$input'" >&2
-      print_model_table 2
-      exit 64 ;;
+    flash-low)                     printf '%s' "Gemini 3.8 Flash (Low)" ;;
+    flash-medium|flash-med)        printf '%s' "Gemini 3.8 Flash (Medium)" ;;
+    flash|flash-high)              printf '%s' "Gemini 3.8 Flash (High)" ;;
+    pro-low|argon-low)             printf '%s' "Gemini 4 Argon (Low)" ;;
+    pro-medium|pro-med|argon-medium) printf '%s' "Gemini 4 Argon (Medium)" ;;
+    pro|pro-high|argon|argon-high) printf '%s' "Gemini 4 Argon (High)" ;;
+    sonnet|claude-sonnet)          printf '%s' "Claude Sonnet 5.5 (High)" ;;
+    opus|claude-opus)              printf '%s' "Claude Opus 5.5 (High)" ;;
+    gpt-oss|gpt-oss-120b)          printf '%s' "GPT-OSS 120B (Medium)" ;;
+    # agy validates the name itself and lists valid models on error.
+    *)                             printf '%s' "$input" ;;
   esac
-}
-
-validate_settings_file() {
-  if [ ! -f "$AGY_SETTINGS_FILE" ]; then
-    echo "error: $AGY_SETTINGS_FILE not found." >&2
-    echo "       run \`agy\` once interactively to create it." >&2
-    exit 1
-  fi
-  if [ ! -s "$AGY_SETTINGS_FILE" ]; then
-    echo "error: $AGY_SETTINGS_FILE is empty." >&2
-    exit 1
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$AGY_SETTINGS_FILE" 2>/dev/null; then
-      echo "error: $AGY_SETTINGS_FILE is not valid JSON." >&2
-      exit 1
-    fi
-  fi
-  if ! grep -q '"model"' "$AGY_SETTINGS_FILE"; then
-    echo "error: $AGY_SETTINGS_FILE has no \"model\" field." >&2
-    echo "       open \`agy\` and pick a model with /model first." >&2
-    exit 1
-  fi
-}
-
-restore_orphaned_backup() {
-  [ -f "$AGY_SETTINGS_SENTINEL" ] || {
-    if [ -f "$AGY_SETTINGS_BACKUP" ]; then
-      echo "[wrapper] note: stale backup with no sentinel; removing $AGY_SETTINGS_BACKUP" >&2
-      rm -f "$AGY_SETTINGS_BACKUP"
-    fi
-    return 0
-  }
-  local pid; pid="$(head -n1 "$AGY_SETTINGS_SENTINEL" 2>/dev/null || true)"
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    return 0
-  fi
-  if [ -f "$AGY_SETTINGS_BACKUP" ]; then
-    mv "$AGY_SETTINGS_BACKUP" "$AGY_SETTINGS_FILE"
-    echo "[wrapper] recovered orphaned settings backup from PID ${pid:-unknown}" >&2
-  fi
-  rm -f "$AGY_SETTINGS_SENTINEL"
-}
-
-# mkdir-based lock; macOS has no flock(1). Dead-holder detection avoids
-# SIGKILL deadlocks.
-with_settings_lock() {
-  local fn="$1"; shift
-  local attempt=0
-  local max_wait="${AGY_LOCK_WAIT_SECONDS:-600}"
-  while ! mkdir "$AGY_SETTINGS_LOCKDIR" 2>/dev/null; do
-    local holder_pid_file="${AGY_SETTINGS_LOCKDIR}/pid"
-    if [ -f "$holder_pid_file" ]; then
-      local holder_pid; holder_pid="$(cat "$holder_pid_file" 2>/dev/null || true)"
-      if [ -n "$holder_pid" ] && ! kill -0 "$holder_pid" 2>/dev/null; then
-        rm -rf "$AGY_SETTINGS_LOCKDIR"
-        continue
-      fi
-    fi
-    attempt=$((attempt + 1))
-    if [ "$attempt" -gt "$max_wait" ]; then
-      echo "error: could not acquire settings lock after ${max_wait}s" >&2
-      exit 1
-    fi
-    sleep 1
-  done
-  echo "$$" > "${AGY_SETTINGS_LOCKDIR}/pid"
-  local rc=0
-  "$fn" "$@" || rc=$?
-  rm -rf "$AGY_SETTINGS_LOCKDIR"
-  return "$rc"
-}
-
-# python3 preferred for correctness; sed fallback only matches single-line
-# "model": "..." (the format agy itself writes).
-_patch_model_field() {
-  local canonical="$1"
-  local tmp; tmp="$(mktemp "${AGY_SETTINGS_FILE}.tmp.XXXXXX")"
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$AGY_SETTINGS_FILE" "$canonical" "$tmp" <<'PY'
-import json, sys
-src, model, dst = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(src) as f:
-    data = json.load(f)
-data["model"] = model
-with open(dst, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-PY
-  else
-    local esc; esc="$(printf '%s' "$canonical" | sed -e 's/[\/&]/\\&/g')"
-    sed -E "s/^([[:space:]]*\"model\"[[:space:]]*:[[:space:]]*\")[^\"]*(\".*)$/\1${esc}\2/" \
-        "$AGY_SETTINGS_FILE" > "$tmp"
-    echo "[wrapper] note: python3 missing, used sed fallback to patch settings.json" >&2
-  fi
-  mv "$tmp" "$AGY_SETTINGS_FILE"
-}
-
-_restore_settings() {
-  if [ -f "$AGY_SETTINGS_BACKUP" ]; then
-    mv "$AGY_SETTINGS_BACKUP" "$AGY_SETTINGS_FILE"
-  fi
-  rm -f "$AGY_SETTINGS_SENTINEL"
-}
-
-_do_patched_run() {
-  local canonical="$1"; shift
-  cp -p "$AGY_SETTINGS_FILE" "$AGY_SETTINGS_BACKUP"
-  printf '%s\n%s\n' "$$" "$canonical" > "$AGY_SETTINGS_SENTINEL"
-  trap '_restore_settings' EXIT INT TERM HUP
-  _patch_model_field "$canonical"
-  local rc=0
-  "$@" || rc=$?
-  _restore_settings
-  trap - EXIT INT TERM HUP
-  return "$rc"
-}
-
-# `--` separator guards against canonical names that start with `-`.
-with_model_override() {
-  local canonical="$1"; shift
-  if [ "${1:-}" != "--" ]; then
-    echo "internal: with_model_override expects '--' after canonical name" >&2
-    exit 70
-  fi
-  shift
-  validate_settings_file
-  with_settings_lock _do_patched_run "$canonical" "$@"
 }
 
 cmd_ask() {
@@ -312,7 +173,7 @@ cmd_ask() {
   local path
   path="$(require_ready)"
   if [ -n "$canonical" ]; then
-    with_model_override "$canonical" -- "$path" -p "$prompt" "$@"
+    "$path" --model "$canonical" -p "$prompt" "$@"
   else
     "$path" -p "$prompt" "$@"
   fi
@@ -332,9 +193,26 @@ cmd_review() {
     echo "error: no git diff found in $repo_dir. Stage or make changes first." >&2
     exit 1
   fi
-  local full
-  full=$(printf '%s\n\nDiff:\n```diff\n%s\n```\n' "$focus" "$diff")
-  "$path" -p "$full"
+  # Windows caps a command line at ~32K chars (Linux: 128K per argument) and
+  # `agy -p` ignores stdin, so large diffs go through a file agy can read.
+  local max_inline="${AGY_REVIEW_INLINE_MAX:-24000}"
+  if [ "${#diff}" -le "$max_inline" ]; then
+    local full
+    full=$(printf '%s\n\nDiff:\n```diff\n%s\n```\n' "$focus" "$diff")
+    "$path" -p "$full"
+    return
+  fi
+  local tmpdir; tmpdir="$(mktemp -d)"
+  trap "rm -rf $(printf '%q' "$tmpdir")" EXIT
+  printf '%s\n' "$diff" > "$tmpdir/review.diff"
+  local diff_file="$tmpdir/review.diff" add_dir="$tmpdir"
+  if is_windows && command -v cygpath >/dev/null 2>&1; then
+    diff_file="$(cygpath -w "$diff_file")"
+    add_dir="$(cygpath -w "$add_dir")"
+  fi
+  "$path" --add-dir "$add_dir" \
+    -p "$(printf '%s\n\nThe diff is too large to inline. Read it from this file (unified diff of %s): %s' \
+           "$focus" "$repo_dir" "$diff_file")"
 }
 
 cmd_image() {
@@ -450,27 +328,21 @@ HELP
   cat <<'HELP'
 
 How --model works
-  The plugin manages the "model" field in ~/.gemini/antigravity-cli/settings.json
-  for the duration of a single call: it takes a lock, swaps in your requested
-  model, invokes agy, and restores the original on exit (including SIGINT /
-  SIGTERM). If your TUI is open in parallel, its selected model will flip
-  for the duration of the call and revert when the call finishes.
-
-  Unknown aliases fail with exit 64 — typo safety beats forward-compat. If
-  Google ships a new model, update the plugin.
+  The wrapper resolves the alias and passes it to agy's own --model flag for
+  that call only; your default model and any open TUI are left untouched.
+  Unknown names are forwarded as-is and agy rejects invalid ones with the
+  list of available models.
 
 Underlying CLI
   Run `agy --help` for agy's own flags: --add-dir, -c/--continue,
   --conversation, --dangerously-skip-permissions, -i/--prompt-interactive,
-  --log-file, -p/--print, --print-timeout, --sandbox.
+  --log-file, --model, -p/--print, --print-timeout, --sandbox.
 
-  Subcommands: changelog, help, install, plugin/plugins, update.
+  Subcommands: changelog, help, install, models, plugin/plugins, update.
 HELP
 }
 
 main() {
-  restore_orphaned_backup 2>/dev/null || true
-
   case "${1:-}" in
     check)              cmd_check ;;
     ask)     shift;     cmd_ask "$@" ;;

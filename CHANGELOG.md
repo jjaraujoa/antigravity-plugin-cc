@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-11-02
+
+### Fixed
+- Native Windows (Claude Code + Git Bash): the wrapper now finds `agy.exe`
+  in `%LOCALAPPDATA%\agy\bin` even when the running session predates the
+  installer's PATH change, and install hints point to the PowerShell
+  installer (`install.ps1`) on Windows.
+- `--model`: passed to agy's native `--model` flag instead of patching
+  `~/.gemini/antigravity-cli/settings.json`, which agy 1.4.x no longer
+  creates (every `--model` call failed with "settings.json not found").
+  Removes the settings lock/backup machinery.
+- Model aliases updated to the current catalog (Gemini 4 Argon, Gemini 3.8
+  Flash, Claude 5.5); unknown values are forwarded to agy, which validates
+  them and lists available models.
+- `/agy:review`: diffs over 24K chars are handed to agy via a temp file
+  (`--add-dir`) instead of argv, avoiding the ~32K Windows command-line
+  limit (and Linux's 128K per-argument limit).
+
 ## [0.4.1] - 2026-05-27
 
 ### Fixed

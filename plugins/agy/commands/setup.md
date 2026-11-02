@@ -1,6 +1,6 @@
 ---
 description: Verify the Antigravity CLI (`agy`) is installed and authenticated; offer to install it if missing
-allowed-tools: Bash(bash:*), Bash(curl:*), AskUserQuestion
+allowed-tools: Bash(bash:*), Bash(curl:*), PowerShell, AskUserQuestion
 ---
 
 Run:
@@ -17,7 +17,13 @@ Then interpret the JSON output:
     ```bash
     curl -fsSL https://antigravity.google/cli/install.sh | bash
     ```
-    Then re-run the check.
+    On Windows (native, not WSL) use the PowerShell installer instead,
+    which puts `agy.exe` in `%LOCALAPPDATA%\agy\bin`:
+    ```powershell
+    irm https://antigravity.google/cli/install.ps1 | iex
+    ```
+    Then re-run the check (the wrapper finds `agy.exe` there even before
+    Claude Code is restarted with the new PATH).
   - `Skip for now` — explain that `/antigravity:ask`, `/antigravity:delegate`,
     and `/antigravity:review` will fail until `agy` is installed.
 
